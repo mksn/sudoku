@@ -8,20 +8,20 @@
 #include <string>
 
 class Sudoku {
-    std::array<std::array<int, 9>, 9> board{}; // 0 for empty, 1..9 for digits
+    std::array<std::array<int, 9>, 9> board{};
+    std::array<std::array<int, 9>, 9> original{};
+
+    std::uint64_t solve_steps = 0;
 
 public:
-    // Default constructor
     Sudoku() = default;
 
-    // Construct directly from an input stream
     explicit Sudoku(std::istream& in) {
         if (!load(in)) {
             throw std::runtime_error("Failed to load Sudoku from stream");
         }
     }
 
-    // Construct directly from a filename
     explicit Sudoku(const std::string& filename) {
         std::ifstream file(filename);
         if (!file) {
@@ -53,7 +53,6 @@ public:
         return row == 9;
     }
 
-    // Return the ASCII representation of the board as a string
     std::string toString() const {
         std::ostringstream oss;
         for (int row = 0; row < 9; row++) {
@@ -68,10 +67,141 @@ public:
         return oss.str();
     }
 
-    // Stream insertion operator uses toString()
     friend std::ostream& operator<<(std::ostream& out, const Sudoku& s) {
         return out << s.toString();
     }
+
+    bool isConsistent() const {
+        for (int row = 0; row < 9; ++row) {
+            bool seen[10] = { false };
+            for (int col = 0; col < 9; ++col) {
+                int v = board[row][col];
+
+                if (v && seen[v])
+                    return false;
+                if (v)
+                    seen[v] = true;
+            }
+        }
+
+        for (int col = 0; col < 9; ++col) {
+            bool seen[10] = { false };
+            for (int row = 0; row < 9; ++row) {
+                int v = board[row][col];
+
+                if (v && seen[v])
+                    return false;
+                if (v)
+                    seen[v] = true;
+            }
+        }
+
+        for (int br = 0; br < 9; br += 3) {
+            for (int bc = 0; bc < 9; bc += 3) {
+                bool seen[10] = { false };
+
+                for (int dr = 0; dr < 3; ++dr) {
+                    for (int dc = 0; dc < 3; ++dc) {
+                        int v = board[br + dr][bc + dc];
+
+                        if (v && seen[v])
+                            return false;
+                        if (v)
+                            seen[v] = true;
+                    }
+                }
+            }
+        }
+        return true;
+    }
+
+    bool isSafe(int row, int col, int val) const {
+        for (int c = 0; c < 9; ++c)
+            if (board[row][c] == val)
+                return false;
+
+        for (int r = 0; r < 9; ++r)
+            if (board[r][col] == val)
+                return false;
+
+        int br = (row / 3) * 3, bc = (col / 3) * 3;
+        for (int dr = 0; dr < 3; ++dr)
+            for (int dc = 0; dc < 3; ++dc)
+                if (board[br + dr][bc + dc] == val)
+                    return false;
+        return true;
+    }
+
+    bool findEmpty(int& row, int& col) const {
+        for (row = 0; row < 9; ++row)
+            for (col = 0; col < 9; ++col)
+                if (board[row][col] == 0)
+                    return true;
+        return false;
+    }
+
+    bool solveFirst() {
+        int row, col;
+        
+        if (!findEmpty(row, col)) 
+            return true; // solved
+        
+        for (int val = 1; val <= 9; ++val) {
+            if (isSafe(row, col, val)) {
+                board[row][col] = val;
+				++solve_steps;
+                if (solveFirst())
+                    return true;
+                board[row][col] = 0;
+            }
+        }
+        return false;
+    }
+
+    int countSolutions(int cap) {
+        int row, col;
+        if (!findEmpty(row, col)) return 1;
+        int count = 0;
+
+        for (int val = 1; val <= 9; ++val) {
+            if (isSafe(row, col, val)) {
+                board[row][col] = val;
+                count += countSolutions(cap - count);
+                if (count >= cap) {
+                    board[row][col] = 0;
+                    return count;
+                }
+                board[row][col] = 0;
+            }
+        }
+        return count;
+    }
+
+    int findSolutions() {
+        original = board;
+
+        if (!solveFirst()) {
+            board = original;
+            return 0;
+        }
+        auto solvedOnce = board;
+
+        board = original;
+        int cnt = countSolutions(2);
+
+        if (cnt == 1) {
+            board = solvedOnce;
+            return 1;
+        }
+        else if (cnt >= 2) {
+            board = solvedOnce;
+            return 2;
+        }
+
+        board = original;
+        return 0;
+    }
+
 };
 
 int main(int argc, char** argv) {
@@ -82,11 +212,28 @@ int main(int argc, char** argv) {
 
     try {
         Sudoku s(argv[1]);
-        std::cout << "Read Sudoku board:" << "\n";
-        std::cout << s; // uses operator<<
+
+        if (!s.isConsistent()) {
+            std::cerr << "Input violates Sudoku rules (duplicate in row/col/box).\n";
+            return 2;
+        }
+        
+        int status = s.findSolutions();
+        if (status == 0) {
+            std::cout << "No solution found." << std::endl;
+            return 0;
+        }
+        else if (status == 2) {
+            std::cout << "Warning: multiple solutions exist. One valid solution:" << std::endl;
+        }
+        else {
+            std::cout << "Solved uniquely:" << std::endl;
+        }
+        std::cout << s;
     }
+
     catch (const std::exception& e) {
-        std::cerr << "Error: " << e.what() << "\n";
+        std::cerr << "Error: " << e.what() << std::endl;
         return 2;
     }
 
