@@ -202,6 +202,23 @@ public:
         return 0;
     }
 
+    static int countGivens(const std::array<std::array<int, 9>, 9>& b) {
+        int k = 0; 
+        for (const auto& r : b) 
+            for (int v : r) 
+                if (v > 0) ++k;
+        return k;
+    }
+
+    std::string gradeLabel() const {
+        int givens = countGivens(original);
+        std::uint64_t s = solve_steps;
+
+        if (givens >= 30 && s < 2000) return "easy";
+        if (givens >= 26 && s < 20000) return "medium";
+        if (givens >= 22 && s < 70000) return "hard";
+        return "samurai";
+    }
 };
 
 int main(int argc, char** argv) {
@@ -230,6 +247,9 @@ int main(int argc, char** argv) {
             std::cout << "Solved uniquely:" << std::endl;
         }
         std::cout << s;
+
+        std::cout << "Estimated difficulty: " << s.gradeLabel()
+			      << " (givens and backtracking steps considered)" << std::endl;
     }
 
     catch (const std::exception& e) {
