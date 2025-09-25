@@ -2,10 +2,13 @@
 //
 
 #include <array>
+#include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <random>
 #include <sstream>
 #include <string>
+#include <vector>
 
 class Sudoku {
     std::array<std::array<int, 9>, 9> board{};
@@ -219,9 +222,93 @@ public:
         if (givens >= 22 && s < 70000) return "hard";
         return "samurai";
     }
+
+    static Sudoku generate(const std::string& level = "medium") {
+        Sudoku s;
+
+        s.fillFull();
+        s.digHolesUnique(level);
+        return s;
+    }
+
+    const std::array<std::array<int, 9>, 9>& data() const { return board; }
+    std::array<std::array<int, 9>, 9>& data() { return board; }
+
+private:
+    static std::mt19937& randomNumberGenerator() {
+        static std::mt19937 gen(std::random_device{}());
+        return gen;
+    }
+
+    static std::vector<int> shuffledDigits() {
+        std::vector<int> v{ 1,2,3,4,5,6,7,8,9 };
+        std::shuffle(v.begin(), v.end(), randomNumberGenerator());
+        return v;
+    }
+
+    bool fillFull() {
+        int row, col;
+        if (!findEmpty(row, col)) return true; // filled
+        auto vals = shuffledDigits();
+        for (int v : vals) {
+            if (isSafe(row, col, v)) {
+                board[row][col] = v;
+                if (fillFull()) return true;
+                board[row][col] = 0;
+            }
+        }
+        return false;
+    }
+
+    void digHolesUnique(const std::string& level) {
+        int targetGivens = 28; // default medium
+        if (level == "easy") targetGivens = 36;
+        else if (level == "hard") targetGivens = 24;
+        else if (level == "samurai") targetGivens = 22;
+
+        // Prepare list of unique symmetric positions (pairs)
+        std::vector<std::pair<int, int>> cells;
+        cells.reserve(41);
+        for (int r = 0; r < 9; ++r) {
+            for (int c = 0; c < 9; ++c) {
+                int r2 = 8 - r, c2 = 8 - c;
+                if (r < r2 || (r == r2 && c <= c2)) {
+                    cells.emplace_back(r, c);
+                }
+            }
+        }
+        std::shuffle(cells.begin(), cells.end(), randomNumberGenerator());
+
+        for (const auto& [r, c] : cells) {
+            if (countGivens(board) <= targetGivens) break;
+            int r2 = 8 - r, c2 = 8 - c;
+            int v1 = board[r][c], v2 = board[r2][c2];
+            if (v1 == 0 && v2 == 0) continue;
+            // remove symmetric pair
+            int tmp1 = board[r][c];
+            int tmp2 = board[r2][c2];
+            board[r][c] = 0; board[r2][c2] = 0;
+            auto backup = board;
+            int n = countSolutions(2);
+            board = backup;
+            if (n != 1) {
+                // revert
+                board[r][c] = tmp1; board[r2][c2] = tmp2;
+            }
+        }
+    }
 };
 
 int main(int argc, char** argv) {
+    std::string level = (argc >= 2 ? argv[1] : std::string("medium"));
+    Sudoku p = Sudoku::generate(level);
+    Sudoku tmp; tmp.data() = p.data();
+    int n = tmp.countSolutions(2);
+    if (n != 1) {
+        std::cerr << "[warn] generated puzzle may not be unique; consider regenerating." << '\n';
+    }
+    std::cout << p;
+    /*
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <inputfile>\n";
         return 1;
@@ -256,7 +343,7 @@ int main(int argc, char** argv) {
         std::cerr << "Error: " << e.what() << std::endl;
         return 2;
     }
-
+    */
     return 0;
 }
 
