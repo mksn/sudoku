@@ -274,7 +274,7 @@ private:
 
     bool fillFull() {
         int row, col;
-        if (!findEmpty(row, col)) return true; // filled
+        if (!findEmpty(row, col)) return true; 
         auto vals = shuffledDigits();
         for (int v : vals) {
             if (isSafe(row, col, v)) {
