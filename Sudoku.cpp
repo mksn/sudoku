@@ -12,9 +12,9 @@
 
 class Sudoku {
     std::array<std::array<int, 9>, 9> board{};
-    std::array<std::array<int, 9>, 9> original{};
 
     std::uint64_t solve_steps = 0;
+	int initial_givens = 0;
 
 public:
     Sudoku() = default;
@@ -53,6 +53,7 @@ public:
             }
             row++;
         }
+        int k = 0; for (const auto& r : board) for (int v : r) if (v) ++k; initial_givens = k;
         return row == 9;
     }
 
@@ -65,7 +66,7 @@ public:
                 else
                     oss << board[row][col];
             }
-            oss << '\n';
+            oss << std::endl;
         }
         return oss.str();
     }
@@ -147,7 +148,7 @@ public:
         int row, col;
         
         if (!findEmpty(row, col)) 
-            return true; // solved
+            return true;
         
         for (int val = 1; val <= 9; ++val) {
             if (isSafe(row, col, val)) {
@@ -181,8 +182,9 @@ public:
     }
 
     int findSolutions() {
-        original = board;
+        auto original = board;
 
+        solve_steps = 0;
         if (!solveFirst()) {
             board = original;
             return 0;
@@ -214,21 +216,45 @@ public:
     }
 
     std::string gradeLabel() const {
-        int givens = countGivens(original);
+        int givens = initial_givens;
         std::uint64_t s = solve_steps;
 
-        if (givens >= 30 && s < 2000) return "easy";
-        if (givens >= 26 && s < 20000) return "medium";
-        if (givens >= 22 && s < 70000) return "hard";
+		std::cout << "[debug] solve steps: " << s << ", initial givens: " << givens << std::endl;
+        if (givens >= 30 && s < 2'000) return "easy";
+        if (givens >= 26 && s < 20'000) return "medium";
+        if (givens >= 22 && s < 80'000) return "hard";
         return "samurai";
     }
 
-    static Sudoku generate(const std::string& level = "medium") {
-        Sudoku s;
+    std::string estimateGrade() const {
+        Sudoku tmp = *this;
+        int status = tmp.findSolutions();
+  
+        if (status == 0) return "unsolvable";
+        return tmp.gradeLabel();
+    }
 
-        s.fillFull();
-        s.digHolesUnique(level);
-        return s;
+    static Sudoku generate(const std::string& level = "medium") {
+        const int maxAttempts = 40;
+        Sudoku best;
+        std::string bestGrade;
+
+        for (int attempt = 0; attempt < maxAttempts; ++attempt) {
+            Sudoku s;
+ 
+            s.fillFull();
+            s.digHolesUnique(level);
+			s.initial_givens = countGivens(s.board);
+            std::string g = s.estimateGrade();
+            if (g == level) {
+                return s;
+            }
+            if (attempt == 0) {
+                best = s;
+            }
+		}
+        return best;
+        Sudoku s;
     }
 
     const std::array<std::array<int, 9>, 9>& data() const { return board; }
@@ -261,12 +287,11 @@ private:
     }
 
     void digHolesUnique(const std::string& level) {
-        int targetGivens = 28; // default medium
+        int targetGivens = 28; 
         if (level == "easy") targetGivens = 36;
         else if (level == "hard") targetGivens = 24;
         else if (level == "samurai") targetGivens = 22;
 
-        // Prepare list of unique symmetric positions (pairs)
         std::vector<std::pair<int, int>> cells;
         cells.reserve(41);
         for (int r = 0; r < 9; ++r) {
@@ -281,69 +306,93 @@ private:
 
         for (const auto& [r, c] : cells) {
             if (countGivens(board) <= targetGivens) break;
+
             int r2 = 8 - r, c2 = 8 - c;
             int v1 = board[r][c], v2 = board[r2][c2];
             if (v1 == 0 && v2 == 0) continue;
-            // remove symmetric pair
+    
             int tmp1 = board[r][c];
             int tmp2 = board[r2][c2];
-            board[r][c] = 0; board[r2][c2] = 0;
+            board[r][c] = 0; 
+            board[r2][c2] = 0;
+            
             auto backup = board;
             int n = countSolutions(2);
             board = backup;
             if (n != 1) {
-                // revert
-                board[r][c] = tmp1; board[r2][c2] = tmp2;
+                board[r][c] = tmp1; 
+                board[r2][c2] = tmp2;
             }
         }
     }
 };
 
+static void usage(const char* prog) {
+    std::cerr << "Usage:" << std::endl;
+    std::cerr << "  " << prog << " solve <file>" << std::endl;
+    std::cerr << "  " << prog << " grade <file>" << std::endl;
+    std::cerr << "  " << prog << " generate [easy|medium|hard|samurai]" << std::endl;
+}
+
 int main(int argc, char** argv) {
-    std::string level = (argc >= 2 ? argv[1] : std::string("medium"));
-    Sudoku p = Sudoku::generate(level);
-    Sudoku tmp; tmp.data() = p.data();
-    int n = tmp.countSolutions(2);
-    if (n != 1) {
-        std::cerr << "[warn] generated puzzle may not be unique; consider regenerating." << '\n';
-    }
-    std::cout << p;
-    /*
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <inputfile>\n";
-        return 1;
-    }
+    if (argc < 2) { usage(argv[0]); return 1; }
+
+    std::string cmd = argv[1];
 
     try {
-        Sudoku s(argv[1]);
+        if (cmd == "solve" || cmd == "grade") {
+            if (argc < 3) { usage(argv[0]); return 1; }
+            Sudoku s(argv[2]);
 
-        if (!s.isConsistent()) {
-            std::cerr << "Input violates Sudoku rules (duplicate in row/col/box).\n";
-            return 2;
+            if (!s.isConsistent()) {
+                std::cerr << "Input violates Sudoku rules (duplicate in row/col/box)." << std::endl;
+                return 2;
+            }
+            int status = s.findSolutions();
+            
+            if (cmd == "solve") {
+                if (status == 0) {
+                    std::cout << "No solution found." << std::endl;
+                }
+                else if (status == 2) {
+                    std::cout << "Warning: multiple solutions exist. One valid solution:" << std::endl;
+                    std::cout << s;
+                }
+                else {
+                    std::cout << "Solved uniquely:" << std::endl;
+                    std::cout << s;
+                }
+            }
+            else {
+                (void)status;
+                std::cout << s.gradeLabel() << std::endl;
+            }
         }
-        
-        int status = s.findSolutions();
-        if (status == 0) {
-            std::cout << "No solution found." << std::endl;
-            return 0;
-        }
-        else if (status == 2) {
-            std::cout << "Warning: multiple solutions exist. One valid solution:" << std::endl;
+        else if (cmd == "generate") {
+            std::string level = (argc >= 3 ? argv[2] : std::string("medium"));
+            Sudoku p = Sudoku::generate(level);
+            Sudoku tmp; tmp.data() = p.data();
+            int n = tmp.countSolutions(2);
+            std::string achieved = p.estimateGrade();
+
+            if (n != 1) {
+                std::cerr << "[warn] generated puzzle may not be unique; consider regenerating." << std::endl;
+            }
+            if (achieved != level) {
+                std::cerr << "[note] requested level='" << level << "' but achieved '" << achieved << "'." << std::endl;
+			}
+            std::cout << p;
         }
         else {
-            std::cout << "Solved uniquely:" << std::endl;
+            usage(argv[0]);
+            return 1;
         }
-        std::cout << s;
-
-        std::cout << "Estimated difficulty: " << s.gradeLabel()
-			      << " (givens and backtracking steps considered)" << std::endl;
     }
-
     catch (const std::exception& e) {
         std::cerr << "Error: " << e.what() << std::endl;
-        return 2;
+        return 3;
     }
-    */
+
     return 0;
 }
 
